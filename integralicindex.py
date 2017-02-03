@@ -34,7 +34,7 @@ class ICTree(object):
         return self.ibisicroot+"/"+self.DS_to_fn_prefix(DS)+"_%.4i.fits"%serial
 
     def DS_to_idx_fn(self,DS):
-        return self.idxicroot+"/"+self.DS_to_fn_prefix(DS)+"_idx.fits"
+        return self.idxicroot+"/"+DS+"-IDX.fits"
 
     def create_index_empty(self,DS):
         dc=pilton.heatool("dal_create")
@@ -56,21 +56,21 @@ class ICTree(object):
 
     def attach_ds(self,fn,serial=0):
         DS=self.get_file_DS(fn)
-        f=pyfits.open(fn)
-        f.writeto(self.DS_to_fn(DS,serial),clobber=True)
+        f_ds=pyfits.open(fn)
+        f_ds.writeto(self.DS_to_fn(DS,serial),clobber=True)
 
         da=pilton.heatool("dal_attach")
         da['Parent']=self.DS_to_idx_fn(DS)
         da['Child1']=self.DS_to_fn(DS,serial)
         da.run()
 
-        f=pyfits.open(da['Parent'].value)
+        f_idx=pyfits.open(da['Parent'].value)
 
         for k in ['VERSION','VSTART','VSTOP']:
-            if k in f[1].data[-1]:
-                f[1].data[-1][k]=f[1].header[k]
+            f_idx[1].data[-1][k]=f_ds[1].header[k]
+            print(k,f_idx[1].data[-1][k],f_ds[1].header[k])
 
-        f.writeto(da['Parent'].value,clobber=True)
+        f_idx.writeto(da['Parent'].value,clobber=True)
 
         dv=pilton.heatool("dal_verify")
         dv["indol"]=self.DS_to_idx_fn(DS)
@@ -80,7 +80,9 @@ class ICTree(object):
         dv.run()
 
     def init_icmaster(self):
-        f=pyfits.open(self.get_icmaster("osa10"))
+        f=pyfits.open(self.get_icmaster("osa102"))
+        
+        print("columns was:",len(f[3].columns))
 
         nhdu=pyfits.BinTableHDU.from_columns(f[3].columns+pyfits.ColDefs([pyfits.Column("ISGR_L2RE_MOD","1I"),pyfits.Column("ISGR_MCEC_MOD","1I"),pyfits.Column("ISGR_EFFC_MOD","1I")]))
         #nhdu=pyfits.BinTableHDU.from_columns(f[3].columns+pyfits.ColDefs([pyfits.Column("ISGR_LUT2_MOD","1I"),pyfits.Column("ISGR_L2RE_MOD","1I"),pyfits.Column("ISGR_MCEC_MOD","1I"),pyfits.Column("ISGR_EFFC_MOD","1I")]))
@@ -93,13 +95,16 @@ class ICTree(object):
             #print ":",k,"x",v
             nhdu.header[k]=v
 
-        nhdu.data[0]['ISGR_RISE_MOD']=1
+        nhdu.data[0]['ISGR_RISE_MOD']=2
         nhdu.data[0]['ISGR_L2RE_MOD']=1
         nhdu.data[0]['ISGR_MCEC_MOD']=1
         nhdu.data[0]['ISGR_EFFC_MOD']=1
 
         f[3]=nhdu
-        f.writeto("/sps/integral/data/ic/ic_snapshot_20140321/idx/ic/ic_master_file.fits",clobber=True)
+
+        print("columns now:",len(f[3].columns))
+
+        f.writeto(self.get_icmaster(),clobber=True)
 
     def create_index_from_list(self,fns=None,fns_list=None):
         if fns_list is None:
