@@ -1,11 +1,15 @@
 from __future__ import print_function
 
-import astropy.io.fits as pyfits
+import tempfile
+import os
 import argparse
+
+import astropy.io.fits as pyfits
 import pilton
 from ddosa import remove_withtemplate
-import os
 import numpy as np
+from collections import defaultdict
+import timesystem
 
 
 class ICTree(object):
@@ -28,7 +32,10 @@ class ICTree(object):
         return self.icroot+"/idx/ic/ic_master_file"+("_"+version if version is not None else "")+".fits"
 
     def DS_to_fn_prefix(self,DS):
-        return DS.lower().replace("-","_")
+        return DS.lower().replace("-","_").replace(".","")
+    
+    def DS_to_mnemcol(self,DS):
+        return DS.replace("-","_").replace(".","")
 
     def DS_to_fn(self,DS,serial=0):
         return self.ibisicroot+"/"+self.DS_to_fn_prefix(DS)+"_%.4i.fits"%serial
@@ -79,13 +86,18 @@ class ICTree(object):
         dv['detachother']="yes"
         dv.run()
 
+
+
     def init_icmaster(self):
         f=pyfits.open(self.get_icmaster("osa102"))
         
         print("columns was:",len(f[3].columns))
 
-        nhdu=pyfits.BinTableHDU.from_columns(f[3].columns+pyfits.ColDefs([pyfits.Column("ISGR_L2RE_MOD","1I"),pyfits.Column("ISGR_MCEC_MOD","1I"),pyfits.Column("ISGR_EFFC_MOD","1I")]))
-        #nhdu=pyfits.BinTableHDU.from_columns(f[3].columns+pyfits.ColDefs([pyfits.Column("ISGR_LUT2_MOD","1I"),pyfits.Column("ISGR_L2RE_MOD","1I"),pyfits.Column("ISGR_MCEC_MOD","1I"),pyfits.Column("ISGR_EFFC_MOD","1I")]))
+        #print([c.name for c in f[3].columns])
+
+        nhdu=pyfits.BinTableHDU.from_columns(f[3].columns+pyfits.ColDefs([
+            pyfits.Column(self.DS_to_mnemcol(DS),"1I") for DS in self.icstructures.keys()
+             if self.DS_to_mnemcol(DS) not in [c.name for c in f[3].columns]]))
 
         for k,v in f[3].header.items():
             if k.startswith("TFORM"): continue
@@ -95,10 +107,11 @@ class ICTree(object):
             #print ":",k,"x",v
             nhdu.header[k]=v
 
-        nhdu.data[0]['ISGR_RISE_MOD']=2
-        nhdu.data[0]['ISGR_L2RE_MOD']=1
-        nhdu.data[0]['ISGR_MCEC_MOD']=1
-        nhdu.data[0]['ISGR_EFFC_MOD']=1
+        for DS,icstructure in self.icstructures.items():
+            versions=sorted(set([icfile['version'] for icfile in icstructure]))
+            if len(versions)!=1:
+                raise Exception("inconsistent versions for "+DS+" "+repr(versions))
+            nhdu.data[0][self.DS_to_mnemcol(DS)]=versions[0]
 
         f[3]=nhdu
 
@@ -106,37 +119,24 @@ class ICTree(object):
 
         f.writeto(self.get_icmaster(),clobber=True)
 
-    def create_index_from_list(self,fns=None,fns_list=None):
+    def create_index_from_list(self,DS,fns=None,fns_list=None):
         if fns_list is None:
             if fns is None:
                 raise Exception("what?")
 
-            fns_list=tempfile.mkstemp()
-            open(fns_list,"w").write("\n".join(fns))
+            fns_list_handle,fns_list_fn=tempfile.mkstemp()
+            print("\n".join(fns))
+            os.write(fns_list_handle,"\n".join(fns)+"\n")
 
         else:
             if fns is not None:
                 raise Exception("what?")
 
-
-        for rev in [239,665,1516]:
-            infn="/sps/integral/data/reduced/ddcache//byrev/%.4i/ISGRI_RISE_MOD.v0//2e84304c/isgr_rise_mod_%.4i.fits.gz"%(rev,rev)
-            f=pyfits.open(infn)
-
-            outfn="/sps/integral/data/ic/ic_snapshot_20140321/ic/ibis/mod/"+f[1].header['FILENAME']
-
-            f.writeto(outfn,clobber=True)
-
-            listf.write(outfn+"\n")
-
-
-        listf.close()
-
         da=pilton.heatool("txt2idx")
-        da['index']="/sps/integral/data/ic/ic_snapshot_20140321/idx/ic/ISGR-RISE-MOD-IDX.fits"
-        da['template']="ISGR-RISE-MOD-IDX.tpl"
+        da['index']=self.DS_to_idx_fn(DS)
+        da['template']=DS+"-IDX.tpl"
         da['update']=1
-        da['element']=listfn
+        da['element']=fns_list_fn
         da.run()
 
         f=pyfits.open(da['index'].value)
@@ -144,18 +144,100 @@ class ICTree(object):
         f[1].header['CONFIGUR']=""
         f.writeto(da['index'].value,clobber=True)
 
-        dv=pilton.heatool("dal_verify")
-
-    def attach_to_master(self,DS):
+    def attach_idx_to_master(self,DS):
         da=pilton.heatool("dal_attach")
         da['Parent']=self.icmaster
         da['Child1']=self.DS_to_idx_fn(DS)
         da.run()
 
+    icstructures=defaultdict(list)
+
+    def get_icfile_validity_rev(self,f,unique=True,first=True,middle=False):
+        vstart=self.find_key(f,"VSTART")
+        vstop=self.find_key(f,"VSTOP")
+
+        rev_start=int(timesystem.converttime("IJD",vstart,"REVNUM"))
+
+        if first:
+            return rev_start
+        
+        rev_stop=int(timesystem.converttime("IJD",vstop,"REVNUM"))
+
+        if middle:
+            return round(0.5*(rev_start+rev_stop))
+    
+        if not unique:
+            return (rev_start,rev_stop)
+
+        if rev_start != rev_stop:
+            raise Exception("this file has many revs",rev_start,rev_stop)
+
+        return rev_start
+        
+    def find_version(self,f):
+        return self.find_key(f,"VERSION")
+        
+    def find_key(self,f,k,unique=True):
+        values=[]
+        for e in f:
+            if k in e.header:
+                values.append(e.header[k])
+
+        if not unique:
+            return values
+
+        values_unique=sorted(set(values))
+        if len(values_unique)>1:
+            raise Exception("this file has many versions",values_unique)
+        if len(values_unique)==0:
+            raise Exception("this file has no versions")
+        return values_unique[0]
+
+    def add_icfile(self,icfile):
+        print("requested to add",icfile)
+        DS=self.get_file_DS(icfile)
+        print(icfile,"as",DS)
+
+        f=pyfits.open(icfile)
+        rev=self.get_icfile_validity_rev(f)
+
+        self.icstructures[DS].append(dict(
+                    origin_filename=icfile,
+                    version=self.find_version(f),
+                    serial=rev,
+                    ))
+
+    def write(self):
+        self.init_icmaster()
+
+        for DS,icfiles in self.icstructures.items():
+            print(DS)
+
+            filelist=[]
+            for icfile in icfiles:
+                print("IC file",icfile)
+                ic_store_filename=self.DS_to_fn(DS,serial=icfile['serial'])
+                print("store in IC as ",ic_store_filename)
+
+                f_ds=pyfits.open(icfile['origin_filename'])
+                f_ds.writeto(ic_store_filename,clobber=True)
+    
+                filelist.append(ic_store_filename)
+
+            print("file list",filelist)
+
+            idx_fn=self.DS_to_idx_fn(DS)
+            if os.path.exists(idx_fn):
+                print("index exists:",idx_fn,"OVERWRITING")
+
+            self.create_index_from_list(DS,fns=filelist)
+
+
+
 
 def main():
     parser = argparse.ArgumentParser(description='Process some integers.')
-    parser.add_argument('icmembers', metavar='new IC file', nargs='+',
+    parser.add_argument('icfile', metavar='new IC file', nargs='+',
             help='new IC file')
     #parser.add_argument('clobber-index', action='store_true',
     #        help='clobber index')
@@ -163,17 +245,16 @@ def main():
     args = parser.parse_args()
 
     ictree=ICTree()
-    ictree.init_icmaster()
+ #   ictree.init_icmaster(version="osa11")
 
-    for icmember in args.icmembers:
-        DS=ictree.get_file_DS(icmember)
-        print(icmember,"as",DS)
+    for icfile in args.icfile:
+        ictree.add_icfile(icfile)
 
-        ictree.create_index_empty(DS)
-        ictree.attach_ds(icmember)
-        ictree.attach_to_master(DS)
+    ictree.write()
+
+ #       ictree.create_index_empty(DS)
+ #       ictree.attach_ds(icfile)
+ #       ictree.attach_to_master(DS)
 
 if __name__ == "__main__":
     main()
-
-
