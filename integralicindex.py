@@ -119,7 +119,7 @@ class ICTree(object):
 
         f.writeto(self.get_icmaster(),clobber=True)
 
-    def create_index_from_list(self,DS,fns=None,fns_list=None):
+    def create_index_from_list(self,DS,fns=None,fns_list=None,update=True,recreate=True):
         if fns_list is None:
             if fns is None:
                 raise Exception("what?")
@@ -132,10 +132,15 @@ class ICTree(object):
             if fns is not None:
                 raise Exception("what?")
 
+        print("files:",fns)
+
+        if os.path.exists(self.DS_to_idx_fn(DS)) and recreate:
+            os.remove(self.DS_to_idx_fn(DS))
+
         da=pilton.heatool("txt2idx")
         da['index']=self.DS_to_idx_fn(DS)
         da['template']=DS+"-IDX.tpl"
-        da['update']=1
+        da['update']=1 if update else 0
         da['element']=fns_list_fn
         da.run()
 
@@ -231,6 +236,7 @@ class ICTree(object):
                 print("index exists:",idx_fn,"OVERWRITING")
 
             self.create_index_from_list(DS,fns=filelist)
+            self.attach_idx_to_master(DS)
 
 
 
