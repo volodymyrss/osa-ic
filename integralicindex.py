@@ -73,6 +73,8 @@ class ICTree(object):
 
         f_idx=pyfits.open(da['Parent'].value)
 
+        f_ds[1].header['VSTOP']=99999
+
         for k in ['VERSION','VSTART','VSTOP']:
             f_idx[1].data[-1][k]=f_ds[1].header[k]
             print(k,f_idx[1].data[-1][k],f_ds[1].header[k])
@@ -206,10 +208,15 @@ class ICTree(object):
         f=pyfits.open(icfile)
         rev=self.get_icfile_validity_rev(f)
 
+        if rev<0 or rev>9000: # over 9000!!
+            serial=1
+        else:
+            serial=rev
+
         self.icstructures[DS].append(dict(
                     origin_filename=icfile,
                     version=self.find_version(f),
-                    serial=rev,
+                    serial=serial,
                     ))
 
     def write(self):
@@ -225,6 +232,7 @@ class ICTree(object):
                 print("store in IC as ",ic_store_filename)
 
                 f_ds=pyfits.open(icfile['origin_filename'])
+                f_ds[1].header['VSTOP']=99999
                 f_ds.writeto(ic_store_filename,clobber=True)
     
                 filelist.append(ic_store_filename)
@@ -254,7 +262,10 @@ def main():
  #   ictree.init_icmaster(version="osa11")
 
     for icfile in args.icfile:
-        ictree.add_icfile(icfile)
+        try:
+            ictree.add_icfile(icfile)
+        except:
+            pass # net tak net
 
     ictree.write()
 
