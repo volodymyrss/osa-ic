@@ -3,6 +3,7 @@ from __future__ import print_function
 import tempfile
 import os
 import argparse
+import time
 
 import astropy.io.fits as pyfits
 import pilton
@@ -16,9 +17,16 @@ class ICTree(object):
     def __init__(self):
         self.icroot=os.environ['CURRENT_IC']
 
-    @property
-    def ibisicroot(self):
-        return self.icroot+"/ic/ibis/mod"
+    #@property
+    def get_ibisicroot(self,DS):
+        if DS=="ISGR-EBDS-MOD":
+            return self.icroot+"/ic/ibis/rsp"
+        
+        if DS.endswith("RSP"):
+            return self.icroot+"/ic/ibis/rsp"
+
+        if DS.endswith("MOD"):
+            return self.icroot+"/ic/ibis/mod"
 
     @property
     def idxicroot(self):
@@ -38,7 +46,7 @@ class ICTree(object):
         return DS.replace("-","_").replace(".","")
 
     def DS_to_fn(self,DS,serial=0):
-        return self.ibisicroot+"/"+self.DS_to_fn_prefix(DS)+"_%.4i.fits"%serial
+        return self.get_ibisicroot(DS)+"/"+self.DS_to_fn_prefix(DS)+"_%.4i.fits"%serial
 
     def DS_to_idx_fn(self,DS):
         return self.idxicroot+"/"+DS+"-IDX.fits"
@@ -246,6 +254,11 @@ class ICTree(object):
             self.create_index_from_list(DS,fns=filelist)
             self.attach_idx_to_master(DS)
 
+            self.write_version()
+
+    def write_version(self):
+        open(self.icroot+"/idx/ic/version","w").write(time.strftime("%Y-%m-%dT%H:%M:%S"))
+        open(self.icroot+"/ic/ibis/version","w").write(time.strftime("%Y-%m-%dT%H:%M:%S"))
 
 
 
