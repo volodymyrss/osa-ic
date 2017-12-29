@@ -14,8 +14,9 @@ import timesystem
 
 
 class ICTree(object):
-    def __init__(self):
+    def __init__(self,suffix=""):
         self.icroot=os.environ['CURRENT_IC']
+        self.suffix=suffix
 
     #@property
     def get_ibisicroot(self,DS):
@@ -34,7 +35,7 @@ class ICTree(object):
 
     @property
     def icmaster(self):
-        return self.get_icmaster()
+        return self.get_icmaster(self.suffix)
     
     def get_icmaster(self,version=None):
         return self.icroot+"/idx/ic/ic_master_file"+("_"+version if version is not None else "")+".fits"
@@ -49,7 +50,11 @@ class ICTree(object):
         return self.get_ibisicroot(DS)+"/"+self.DS_to_fn_prefix(DS)+"_%.4i.fits"%serial
 
     def DS_to_idx_fn(self,DS):
-        return self.idxicroot+"/"+DS+"-IDX.fits"
+        if self.suffix=="":
+            return self.idxicroot+"/"+DS+"-IDX.fits"
+        else:
+            return self.idxicroot+"/"+DS+"-IDX_%s.fits"%self.suffix
+
 
     def create_index_empty(self,DS):
         dc=pilton.heatool("dal_create")
@@ -127,7 +132,7 @@ class ICTree(object):
 
         print("columns now:",len(f[3].columns))
 
-        f.writeto(self.get_icmaster(),clobber=True)
+        f.writeto(self.get_icmaster(self.suffix),clobber=True)
 
     def create_index_from_list(self,DS,fns=None,fns_list=None,update=True,recreate=True):
         if fns_list is None:
@@ -213,6 +218,8 @@ class ICTree(object):
         DS=self.get_file_DS(icfile)
         print(icfile,"as",DS)
 
+        hashe=open(os.path.dirname(os.path.abspath(icfile))+"/hash.txt").read()
+
         f=pyfits.open(icfile)
         rev=self.get_icfile_validity_rev(f)
 
@@ -225,6 +232,7 @@ class ICTree(object):
                     origin_filename=icfile,
                     version=self.find_version(f),
                     serial=serial,
+                    hashe=hashe,
                     ))
 
     def write(self):
@@ -242,6 +250,13 @@ class ICTree(object):
                 f_ds=pyfits.open(icfile['origin_filename'])
                 f_ds[1].header['VSTOP']=99999
                 f_ds.writeto(ic_store_filename,clobber=True)
+
+                version_store=os.path.dirname(os.path.abspath(ic_store_filename))+"/.version."+os.path.basename(ic_store_filename)
+                print("version store",version_store)
+                open(version_store,"w").write(icfile['hashe'])
+                icfile['size']=os.path.getsize(ic_store_filename)
+                icfile['ic_store_filename']=ic_store_filename
+                icfile['version_store']=version_store
     
                 filelist.append(ic_store_filename)
 
@@ -264,21 +279,34 @@ class ICTree(object):
 
 def main():
     parser = argparse.ArgumentParser(description='Process some integers.')
-    parser.add_argument('icfile', metavar='new IC file', nargs='+',
+    parser.add_argument('icfile', metavar='new IC file',nargs="*",
             help='new IC file')
+    parser.add_argument('-f','--file', metavar='new IC file', action='append',
+            help='new IC file')
+    parser.add_argument('-s','--suffix', metavar='suffix',
+            help='new IC file',default="")
     #parser.add_argument('clobber-index', action='store_true',
     #        help='clobber index')
 
     args = parser.parse_args()
 
-    ictree=ICTree()
- #   ictree.init_icmaster(version="osa11")
+    ictree=ICTree(args.suffix)
+    ictree.set_suffix=args.suffix
+
+    for fn in args.file:
+        print("from",fn)
+        with open(fn) as f:
+            for icfile in f:
+                try:
+                    ictree.add_icfile(icfile.strip())
+                except Exception as e:
+                    print("failed to add",icfile.strip(),e)
 
     for icfile in args.icfile:
         try:
             ictree.add_icfile(icfile)
-        except:
-            pass # net tak net
+        except Exception as e:
+            print("failed to add",icfile)
 
     ictree.write()
 
