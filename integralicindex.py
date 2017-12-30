@@ -38,7 +38,7 @@ class ICTree(object):
         return self.get_icmaster(self.suffix)
     
     def get_icmaster(self,version=None):
-        return self.icroot+"/idx/ic/ic_master_file"+("_"+version if version is not None else "")+".fits"
+        return self.icroot+"/idx/ic/ic_master_file"+("_"+version if version is not None and version != "" else "")+".fits"
 
     def DS_to_fn_prefix(self,DS):
         return DS.lower().replace("-","_").replace(".","")
@@ -160,13 +160,13 @@ class ICTree(object):
         da.run()
 
         f=pyfits.open(da['index'].value)
-        f[1].header['CREATOR']=""
-        f[1].header['CONFIGUR']=""
+        f[1].header['CREATOR']="Volodymyr Savchenko"
+        f[1].header['CONFIGUR']="dev"
         f.writeto(da['index'].value,clobber=True)
 
     def attach_idx_to_master(self,DS):
         da=pilton.heatool("dal_attach")
-        da['Parent']=self.icmaster
+        da['Parent']=self.icmaster+"[2]"
         da['Child1']=self.DS_to_idx_fn(DS)
         da.run()
 
@@ -218,7 +218,11 @@ class ICTree(object):
         DS=self.get_file_DS(icfile)
         print(icfile,"as",DS)
 
-        hashe=open(os.path.dirname(os.path.abspath(icfile))+"/hash.txt").read()
+        hash_fn=os.path.dirname(os.path.abspath(icfile))+"/hash.txt"
+        if os.path.exists(hash_fn):
+            hashe=open(hash_fn).read()
+        else:
+            hashe=""
 
         f=pyfits.open(icfile)
         rev=self.get_icfile_validity_rev(f)
@@ -275,6 +279,10 @@ class ICTree(object):
         open(self.icroot+"/idx/ic/version","w").write(time.strftime("%Y-%m-%dT%H:%M:%S"))
         open(self.icroot+"/ic/ibis/version","w").write(time.strftime("%Y-%m-%dT%H:%M:%S"))
 
+    def summarize(self):
+        for DS,icfiles in self.icstructures.items():
+            print(DS,len(icfiles),"%.5lg"%(sum([k['size'] for k in icfiles])/1024./1024.),"Mb")
+
 
 
 def main():
@@ -309,6 +317,7 @@ def main():
             print("failed to add",icfile)
 
     ictree.write()
+    ictree.summarize()
 
  #       ictree.create_index_empty(DS)
  #       ictree.attach_ds(icfile)
