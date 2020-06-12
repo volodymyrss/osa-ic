@@ -289,7 +289,7 @@ def main():
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('icfile', metavar='new IC file',nargs="*",
             help='new IC file')
-    parser.add_argument('-f','--file', metavar='new IC file', action='append',
+    parser.add_argument('-f','--file', metavar='new IC file', action='append',default=[],
             help='new IC file')
     parser.add_argument('-s','--suffix', metavar='suffix',
             help='new IC file',default="")
