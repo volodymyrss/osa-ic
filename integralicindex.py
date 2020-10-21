@@ -141,7 +141,7 @@ class ICTree(object):
 
             fns_list_handle,fns_list_fn=tempfile.mkstemp()
             print("\n".join(fns))
-            os.write(fns_list_handle,"\n".join(fns)+"\n")
+            os.write(fns_list_handle, ("\n".join(fns)+"\n").encode())
 
         else:
             if fns is not None:
