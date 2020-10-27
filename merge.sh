@@ -3,7 +3,7 @@
 rev=${1:-*}
 shift 1
 
-python integralicindex.py \
+osa-ic \
     -f <(ls osa11_deployment/deployment/ic/ic/ibis/rsp/isgr_arf_rsp_0052.fits) \
     -f <(ls -tr ddcache/byrev/${rev}/ISGR_RISE_MOD_Revolution.*/*/isgr_rise_mod_*.fits.gz | tail -1) \
     -f <(ls -tr ddcache/byrev/${rev}/ISGR_EFFC_MOD_Revolution.*/ResponseRev.v3_r1_1_r2_0/*/isgr_effc_mod_*.fits.gz | tail -1) \

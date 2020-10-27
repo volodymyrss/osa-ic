@@ -7,5 +7,4 @@ setup(name='osa-ic',
                         "osa-ic = integralicindex:main"
                     ]
                    },
-
       )
