@@ -4,19 +4,37 @@ import tempfile
 import os
 import time
 import click
+import logging
 
 import astropy.io.fits as pyfits
 import pilton
-from ddosa import remove_withtemplate
 import numpy as np
 from collections import defaultdict
 import timesystem
 
+def remove_withtemplate(fn):
+    s=re.search("(.*?)\((.*?)\)",fn)
+    if s is not None:
+        try:
+            os.remove(s.group(2))
+        except OSError:
+            pass
+        fn=s.group(1)
+
+    try:
+        os.remove(fn)
+    except OSError:
+        pass
+    
+    try:
+        os.remove(fn+".gz")
+    except OSError:
+        pass
 
 class ICTree(object):
-    def __init__(self,suffix=""):
-        self.icroot=os.environ['CURRENT_IC']
-        self.suffix=suffix
+    def __init__(self, icroot=None, suffix=""):
+        self.icroot = icroot or os.environ.get('CURRENT_IC')
+        self.suffix = suffix
 
     #@property
     def get_ibisicroot(self,DS):
@@ -66,10 +84,10 @@ class ICTree(object):
     def get_file_DS(self,fn):
         f=pyfits.open(fn)
         if len(f)>2:
-            print("we refuse to deal with indexed IC ds, as they increase the amount of suffering in the world")
+            logging.warning("we refuse to deal with indexed IC ds, as they increase the amount of suffering in the world")
             raise Exception("too many extensions %i %s"%(len(f),repr(f)))
         if len(f)<2:
-            print("")
+            logging.info("")
             raise Exception("too few extensions %i %s"%(len(f),repr(f)))
         return f[1].header['EXTNAME']
 
@@ -90,7 +108,7 @@ class ICTree(object):
 
         for k in ['VERSION','VSTART','VSTOP']:
             f_idx[1].data[-1][k]=f_ds[1].header[k]
-            print(k,f_idx[1].data[-1][k],f_ds[1].header[k])
+            logging.info("%s %s %s", k, f_idx[1].data[-1][k], f_ds[1].header[k])
 
         f_idx.writeto(da['Parent'].value,clobber=True)
 
@@ -106,9 +124,9 @@ class ICTree(object):
     def init_icmaster(self):
         f=pyfits.open(self.get_icmaster("osa102"))
         
-        print("columns was:",len(f[3].columns))
+        logging.info("columns was: %s", len(f[3].columns))
 
-        #print([c.name for c in f[3].columns])
+        logging.debug([c.name for c in f[3].columns])
 
         nhdu=pyfits.BinTableHDU.from_columns(f[3].columns+pyfits.ColDefs([
             pyfits.Column(self.DS_to_mnemcol(DS),"1I") for DS in self.icstructures.keys()
@@ -130,7 +148,7 @@ class ICTree(object):
 
         f[3]=nhdu
 
-        print("columns now:",len(f[3].columns))
+        logging.info("columns now: %s", len(f[3].columns))
 
         f.writeto(self.get_icmaster(self.suffix),clobber=True)
 
@@ -140,14 +158,14 @@ class ICTree(object):
                 raise Exception("what?")
 
             fns_list_handle,fns_list_fn=tempfile.mkstemp()
-            print("\n".join(fns))
+            logging.info("\n".join(fns))
             os.write(fns_list_handle, ("\n".join(fns)+"\n").encode())
 
         else:
             if fns is not None:
                 raise Exception("what?")
 
-        print("files:",fns)
+        logging.info("files: %s",fns)
 
         if os.path.exists(self.DS_to_idx_fn(DS)) and recreate:
             os.remove(self.DS_to_idx_fn(DS))
@@ -214,9 +232,9 @@ class ICTree(object):
         return values_unique[0]
 
     def add_icfile(self,icfile):
-        print("requested to add",icfile)
+        logging.info("requested to add %s", icfile)
         DS=self.get_file_DS(icfile)
-        print(icfile,"as",DS)
+        logging.info("%s as %s", icfile, DS)
 
         hash_fn=os.path.dirname(os.path.abspath(icfile))+"/hash.txt"
         if os.path.exists(hash_fn):
@@ -243,20 +261,20 @@ class ICTree(object):
         self.init_icmaster()
 
         for DS,icfiles in self.icstructures.items():
-            print(DS)
+            logging.info("%s", DS)
 
             filelist=[]
             for icfile in icfiles:
-                print("IC file",icfile)
+                logging.info("IC file %s", icfile)
                 ic_store_filename=self.DS_to_fn(DS,serial=icfile['serial'])
-                print("store in IC as ",ic_store_filename)
+                logging.info("store in IC as %s", ic_store_filename)
 
                 f_ds=pyfits.open(icfile['origin_filename'])
                 f_ds[1].header['VSTOP']=99999
                 f_ds.writeto(ic_store_filename,clobber=True)
 
                 version_store=os.path.dirname(os.path.abspath(ic_store_filename))+"/.version."+os.path.basename(ic_store_filename)
-                print("version store",version_store)
+                logging.info("version store %s", version_store)
                 open(version_store,"w").write(icfile['hashe'])
                 icfile['size']=os.path.getsize(ic_store_filename)
                 icfile['ic_store_filename']=ic_store_filename
@@ -264,11 +282,11 @@ class ICTree(object):
     
                 filelist.append(ic_store_filename)
 
-            print("file list",filelist)
+            logging.info("file list %s", filelist)
 
             idx_fn=self.DS_to_idx_fn(DS)
             if os.path.exists(idx_fn):
-                print("index exists:",idx_fn,"OVERWRITING")
+                logging.info("index exists: %s OVERWRITING", idx_fn)
 
             self.create_index_from_list(DS,fns=filelist)
             self.attach_idx_to_master(DS)
@@ -281,32 +299,37 @@ class ICTree(object):
 
     def summarize(self):
         for DS,icfiles in self.icstructures.items():
-            print(DS,len(icfiles),"%.5lg"%(sum([k['size'] for k in icfiles])/1024./1024.),"Mb")
+            logging.info("%s %s %s %s", DS,len(icfiles),"%.5lg"%(sum([k['size'] for k in icfiles])/1024./1024.),"Mb")
 
 
 @click.command()
-@click.argument('icfile', nargs=-1)
+@click.argument('icfiles', nargs=-1)
 @click.option('-f', '--from-file', multiple=True)
 @click.option('-s', '--suffix')
 @click.option('-c', '--clobber-index', is_flag=True)
-def main(icfile, from_file, suffix, clobber_index):
-    ictree=ICTree(args.suffix)
-    ictree.set_suffix=args.suffix
+@click.option('-d', '--debug', is_flag=True, default=False)
+def main(icfiles, from_file, suffix, clobber_index, debug):
+    logging.basicConfig(
+            level=logging.DEBUG if debug else logging.INFO
+        )
 
-    for fn in args.file:
-        print("from",fn)
+    ictree = ICTree(suffix)
+    ictree.suffix = suffix
+
+    for fn in from_file:
+        logging.info("from %s",fn)
         with open(fn) as f:
             for icfile in f:
                 try:
                     ictree.add_icfile(icfile.strip())
                 except Exception as e:
-                    print("failed to add",icfile.strip(),e)
+                    logging.error("failed to add %s: %s", icfile.strip(),e)
 
-    for icfile in args.icfile:
+    for fn in icfiles:
         try:
-            ictree.add_icfile(icfile)
+            ictree.add_icfile(fn)
         except Exception as e:
-            print("failed to add",icfile)
+            logging.error("failed to add %s", fn)
 
     ictree.write()
     ictree.summarize()
