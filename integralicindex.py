@@ -2,8 +2,8 @@ from __future__ import print_function
 
 import tempfile
 import os
-import argparse
 import time
+import click
 
 import astropy.io.fits as pyfits
 import pilton
@@ -284,20 +284,12 @@ class ICTree(object):
             print(DS,len(icfiles),"%.5lg"%(sum([k['size'] for k in icfiles])/1024./1024.),"Mb")
 
 
-
-def main():
-    parser = argparse.ArgumentParser(description='Process some integers.')
-    parser.add_argument('icfile', metavar='new IC file',nargs="*",
-            help='new IC file')
-    parser.add_argument('-f','--file', metavar='new IC file', action='append',default=[],
-            help='new IC file')
-    parser.add_argument('-s','--suffix', metavar='suffix',
-            help='new IC file',default="")
-    #parser.add_argument('clobber-index', action='store_true',
-    #        help='clobber index')
-
-    args = parser.parse_args()
-
+@click.command()
+@click.argument('icfile', nargs=-1)
+@click.option('-f', '--from-file', multiple=True)
+@click.option('-s', '--suffix')
+@click.option('-c', '--clobber-index', is_flag=True)
+def main(icfile, from_file, suffix, clobber_index):
     ictree=ICTree(args.suffix)
     ictree.set_suffix=args.suffix
 

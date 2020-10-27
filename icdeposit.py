@@ -14,6 +14,7 @@ subprocess.check_call([
                     isdc_host,
                     "mkdir -p "+isdc_root+"/"+target
                     ])
+
 subprocess.check_call([
                     "rsync",
                     "-avu",
