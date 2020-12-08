@@ -325,7 +325,7 @@ def main(icfiles, from_file, suffix, clobber_index, debug, bare_location, append
     if version:
         tmp_ic_root = os.path.join(ic_collection, version)
     else:
-        tmp_ic_version = f"{time.strftime('%y%m%d.%H%M')}-{os.getpid()}"
+        tmp_ic_version = f"dev{time.strftime('%y%m%d.%H%M')}-{os.getpid()}"
         tmp_ic_root = os.path.join(ic_collection, tmp_ic_version)
 
     subprocess.check_call(["rsync", "-avu", 
