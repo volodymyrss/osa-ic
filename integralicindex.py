@@ -2,6 +2,7 @@ from __future__ import print_function
 
 import tempfile
 import os
+import subprocess
 import time
 import click
 import logging
@@ -32,9 +33,9 @@ def remove_withtemplate(fn):
         pass
 
 class ICTree(object):
-    def __init__(self, icroot=None, suffix=""):
-        self.icroot = icroot or os.environ.get('CURRENT_IC')
-        self.suffix = suffix
+    def __init__(self, icroot, master_suffix=""):
+        self.icroot = icroot
+        self.master_suffix = master_suffix
 
     #@property
     def get_ibisicroot(self,DS):
@@ -53,7 +54,7 @@ class ICTree(object):
 
     @property
     def icmaster(self):
-        return self.get_icmaster(self.suffix)
+        return self.get_icmaster(self.master_suffix)
     
     def get_icmaster(self,version=None):
         return self.icroot+"/idx/ic/ic_master_file"+("_"+version if version is not None and version != "" else "")+".fits"
@@ -68,10 +69,10 @@ class ICTree(object):
         return self.get_ibisicroot(DS)+"/"+self.DS_to_fn_prefix(DS)+"_%.4i.fits"%serial
 
     def DS_to_idx_fn(self,DS):
-        if self.suffix=="":
+        if self.master_suffix=="":
             return self.idxicroot+"/"+DS+"-IDX.fits"
         else:
-            return self.idxicroot+"/"+DS+"-IDX_%s.fits"%self.suffix
+            return self.idxicroot+"/"+DS+"-IDX_%s.fits"%self.master_suffix
 
 
     def create_index_empty(self,DS):
@@ -84,7 +85,7 @@ class ICTree(object):
     def get_file_DS(self,fn):
         f=pyfits.open(fn)
         if len(f)>2:
-            logging.warning("we refuse to deal with indexed IC ds, as they increase the amount of suffering in the world")
+            logging.warning("%s has too many extensions, probably index, and we refuse to deal with indexed IC ds, as they increase the amount of suffering in the world", fn)
             raise Exception("too many extensions %i %s"%(len(f),repr(f)))
         if len(f)<2:
             logging.info("")
@@ -122,7 +123,8 @@ class ICTree(object):
 
 
     def init_icmaster(self):
-        f=pyfits.open(self.get_icmaster("osa102"))
+        #f=pyfits.open(self.get_icmaster("osa102"))
+        f=pyfits.open(self.icmaster)
         
         logging.info("columns was: %s", len(f[3].columns))
 
@@ -150,7 +152,7 @@ class ICTree(object):
 
         logging.info("columns now: %s", len(f[3].columns))
 
-        f.writeto(self.get_icmaster(self.suffix),clobber=True)
+        f.writeto(self.get_icmaster(self.master_suffix),clobber=True)
 
     def create_index_from_list(self,DS,fns=None,fns_list=None,update=True,recreate=True):
         if fns_list is None:
@@ -307,14 +309,31 @@ class ICTree(object):
 @click.option('-f', '--from-file', multiple=True)
 @click.option('-s', '--suffix')
 @click.option('-c', '--clobber-index', is_flag=True)
+@click.option('-v', '--version', default=None)
+@click.option('-a', '--append', is_flag=True, default=False)
+@click.option('-b', '--bare-location', default=None)
 @click.option('-d', '--debug', is_flag=True, default=False)
-def main(icfiles, from_file, suffix, clobber_index, debug):
+def main(icfiles, from_file, suffix, clobber_index, debug, bare_location, append, version):
     logging.basicConfig(
             level=logging.DEBUG if debug else logging.INFO
         )
 
-    ictree = ICTree(suffix)
-    ictree.suffix = suffix
+    ic_collection = os.environ.get("IC_COLLECTION", None)
+    if ic_collection is None:
+        raise RuntimeError("IC_COLLECTION is needed")
+
+    if version:
+        tmp_ic_root = os.path.join(ic_collection, version)
+    else:
+        tmp_ic_version = f"{time.strftime('%y%m%d.%H%M')}-{os.getpid()}"
+        tmp_ic_root = os.path.join(ic_collection, tmp_ic_version)
+
+    subprocess.check_call(["rsync", "-avu", 
+                           os.path.join(ic_collection, "bare")+"/",
+                           tmp_ic_root+"/",
+                           ])
+
+    ictree = ICTree(tmp_ic_root, suffix or "")
 
     for fn in from_file:
         logging.info("from %s",fn)
@@ -333,6 +352,13 @@ def main(icfiles, from_file, suffix, clobber_index, debug):
 
     ictree.write()
     ictree.summarize()
+
+    if version is None:
+        logging.info("version auto-generated: moving (will be)")
+
+    logging.info("IC tree ready in %s", ictree.icroot)
+
+
 
  #       ictree.create_index_empty(DS)
  #       ictree.attach_ds(icfile)
