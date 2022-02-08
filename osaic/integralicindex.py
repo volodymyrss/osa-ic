@@ -1,5 +1,6 @@
 from __future__ import print_function
 from asyncio.log import logger
+from email.policy import default
 import glob
 
 import tempfile
@@ -362,8 +363,10 @@ def ic_find(ic_path, ext_name):
     ic_find = pilton.heatool('ic_find')
     print(ic_find)
 
-    ic_find['icConfig'] = ic_path
-    ic_find['extname'] = ic_path
+    ic_find['icConfig'] = Path(ic_collection) / ic_path / 'idx/ic/ic_master_file.fits'
+    ic_find['extname'] = ext_name
+    ic_find['aliasRef'] = 'OSA'
+    ic_find['subIndex'] = "sub_index.fits"
 
     ic_find.run()
 
@@ -439,27 +442,54 @@ def create(icfiles, from_file, suffix, overwrite_index, base_location, in_place,
 
 @cli.command()
 @click.argument('ic_version')
-def test(ic_version):
+@click.option('-d', '--directory', default=None)
+def test(ic_version, directory):
     ic_path = Path(ic_collection) / Path(ic_version)
-
-    with tempfile.TemporaryDirectory() as td:
+    
+    def run_in_dir(td):
         os.chdir(td)
 
+        for p in ['aux', 'scw', 'cat']:
+            os.symlink(Path(integral_site_config.settings.rep_base_prod) / p, p)
+
+        os.symlink(Path(ic_path) / 'ic', 'ic')
+        os.symlink(Path(ic_path) / 'idx', 'idx')
+
+        os.system('pwd; ls -lotr')
+
+        ###
+        
         ogc = pilton.heatool('og_create')
         ogc['idxSwg'] = 'scw.list'
+        ogc['baseDir'] = os.getcwd()
         
         with open(ogc['idxSwg'].value, 'w') as f:
-            f.write(f'{integral_site_config.settings.rep_base_prod}/0665/066500220010.001/swg.fits')
+            f.write(f'{integral_site_config.settings.rep_base_prod}/scw/0665/066500220010.001/swg.fits')
 
         ogc['instrument'] = 'ibis'
         ogc['ogid'] = 'ic-verification-test-ogid'
 
-        os.system('pwd; ls -lotr')
+        ogc.run(env={**os.environ, 
+                     'REP_BASE_PROD': os.getcwd()})
+        
+        ####
 
-        ogc.run(env={**os.environ, 'REP_BASE_PROD': os.getcwd()})
-        
-        
-        # isa = pilton.heatool('ibis_science_analysis')
+        os.chdir("obs/" + ogc['ogid'].value)
+        isa = pilton.heatool('ibis_science_analysis')
+        isa['startLevel'] = 'COR'
+        isa['endLevel'] = 'LCR'
+        isa.run(env={**os.environ, 
+                     'COMMONSCRIPT': "1",
+                     'COMMONLOGFILE': "+commonlog.txt",
+                     'REP_BASE_PROD': ogc['baseDir'].value
+                     })        
+
+    if directory is None:
+        with tempfile.TemporaryDirectory() as td:
+            run_in_dir(td)
+    else:
+        run_in_dir(directory)
+
 
 if __name__ == "__main__":
     cli()
