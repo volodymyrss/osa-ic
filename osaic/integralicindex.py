@@ -1,20 +1,28 @@
 from __future__ import print_function
+from asyncio.log import logger
+import glob
 
 import tempfile
 import os
+import re
 import subprocess
 import time
 import click
 import logging
 
-import astropy.io.fits as pyfits
+import astropy.io.fits as fits
 import pilton
 import numpy as np
 from collections import defaultdict
 import timesystem
+from pathlib import Path
+
+import integral_site_config
+
+ic_collection = str(integral_site_config.settings.ic_collection) # type: str
 
 def remove_withtemplate(fn):
-    s=re.search("(.*?)\((.*?)\)",fn)
+    s = re.search(r"(.*?)\((.*?)\)",fn)
     if s is not None:
         try:
             os.remove(s.group(2))
@@ -32,7 +40,7 @@ def remove_withtemplate(fn):
     except OSError:
         pass
 
-class ICTree(object):
+class ICTree:
     def __init__(self, icroot, master_suffix=""):
         self.icroot = icroot
         self.master_suffix = master_suffix
@@ -69,7 +77,7 @@ class ICTree(object):
         return self.get_ibisicroot(DS)+"/"+self.DS_to_fn_prefix(DS)+"_%.4i.fits"%serial
 
     def DS_to_idx_fn(self,DS):
-        if self.master_suffix=="":
+        if self.master_suffix == "":
             return self.idxicroot+"/"+DS+"-IDX.fits"
         else:
             return self.idxicroot+"/"+DS+"-IDX_%s.fits"%self.master_suffix
@@ -83,7 +91,7 @@ class ICTree(object):
         dc.run()
         
     def get_file_DS(self,fn):
-        f=pyfits.open(fn)
+        f=fits.open(fn)
         if len(f)>2:
             logging.warning("%s has too many extensions, probably index, and we refuse to deal with indexed IC ds, as they increase the amount of suffering in the world", fn)
             raise Exception("too many extensions %i %s"%(len(f),repr(f)))
@@ -95,15 +103,15 @@ class ICTree(object):
 
     def attach_ds(self,fn,serial=0):
         DS=self.get_file_DS(fn)
-        f_ds=pyfits.open(fn)
-        f_ds.writeto(self.DS_to_fn(DS,serial),clobber=True)
+        f_ds=fits.open(fn)
+        f_ds.writeto(self.DS_to_fn(DS,serial),overwrite=True)
 
         da=pilton.heatool("dal_attach")
         da['Parent']=self.DS_to_idx_fn(DS)
         da['Child1']=self.DS_to_fn(DS,serial)
         da.run()
 
-        f_idx=pyfits.open(da['Parent'].value)
+        f_idx=fits.open(da['Parent'].value)
 
         f_ds[1].header['VSTOP']=99999
 
@@ -111,7 +119,7 @@ class ICTree(object):
             f_idx[1].data[-1][k]=f_ds[1].header[k]
             logging.info("%s %s %s", k, f_idx[1].data[-1][k], f_ds[1].header[k])
 
-        f_idx.writeto(da['Parent'].value,clobber=True)
+        f_idx.writeto(da['Parent'].value,overwrite=True)
 
         dv=pilton.heatool("dal_verify")
         dv["indol"]=self.DS_to_idx_fn(DS)
@@ -123,15 +131,15 @@ class ICTree(object):
 
 
     def init_icmaster(self):
-        #f=pyfits.open(self.get_icmaster("osa102"))
-        f=pyfits.open(self.icmaster)
+        #f=fits.open(self.get_icmaster("osa102"))
+        f=fits.open(self.icmaster)
         
-        logging.info("columns was: %s", len(f[3].columns))
+        logging.info("ic master file starts with columns: %s", len(f[3].columns))
 
         logging.debug([c.name for c in f[3].columns])
 
-        nhdu=pyfits.BinTableHDU.from_columns(f[3].columns+pyfits.ColDefs([
-            pyfits.Column(self.DS_to_mnemcol(DS),"1I") for DS in self.icstructures.keys()
+        nhdu=fits.BinTableHDU.from_columns(f[3].columns+fits.ColDefs([
+            fits.Column(self.DS_to_mnemcol(DS),"1I") for DS in self.icstructures.keys()
              if self.DS_to_mnemcol(DS) not in [c.name for c in f[3].columns]]))
 
         for k,v in f[3].header.items():
@@ -150,9 +158,9 @@ class ICTree(object):
 
         f[3]=nhdu
 
-        logging.info("columns now: %s", len(f[3].columns))
+        logging.info("ic master file complete with columns: %s", len(f[3].columns))
 
-        f.writeto(self.get_icmaster(self.master_suffix),clobber=True)
+        f.writeto(self.get_icmaster(self.master_suffix), overwrite=True)
 
     def create_index_from_list(self,DS,fns=None,fns_list=None,update=True,recreate=True):
         if fns_list is None:
@@ -179,10 +187,10 @@ class ICTree(object):
         da['element']=fns_list_fn
         da.run()
 
-        f=pyfits.open(da['index'].value)
+        f=fits.open(da['index'].value)
         f[1].header['CREATOR']="Volodymyr Savchenko"
         f[1].header['CONFIGUR']="dev"
-        f.writeto(da['index'].value,clobber=True)
+        f.writeto(da['index'].value,overwrite=True)
 
     def attach_idx_to_master(self,DS):
         da=pilton.heatool("dal_attach")
@@ -244,7 +252,7 @@ class ICTree(object):
         else:
             hashe=""
 
-        f=pyfits.open(icfile)
+        f=fits.open(icfile)
         rev=self.get_icfile_validity_rev(f)
 
         if rev<0 or rev>9000: # over 9000!!
@@ -271,9 +279,9 @@ class ICTree(object):
                 ic_store_filename=self.DS_to_fn(DS,serial=icfile['serial'])
                 logging.info("store in IC as %s", ic_store_filename)
 
-                f_ds=pyfits.open(icfile['origin_filename'])
+                f_ds=fits.open(icfile['origin_filename'])
                 f_ds[1].header['VSTOP']=99999
-                f_ds.writeto(ic_store_filename,clobber=True)
+                f_ds.writeto(ic_store_filename,overwrite=True)
 
                 version_store=os.path.dirname(os.path.abspath(ic_store_filename))+"/.version."+os.path.basename(ic_store_filename)
                 logging.info("version store %s", version_store)
@@ -304,40 +312,97 @@ class ICTree(object):
             logging.info("%s %s %s %s", DS,len(icfiles),"%.5lg"%(sum([k['size'] for k in icfiles])/1024./1024.),"Mb")
 
 
-@click.group
+@click.group()
 @click.option('-d', '--debug', is_flag=True, default=False)
-def main(debug):
+def cli(debug):
     logging.basicConfig(
-            level=logging.DEBUG if debug else logging.INFO
+            level="DEBUG" if debug else "INFO"
         )
 
 
-@main.command()
+def ic_version_summary(ic_version_path):
+    return dict(
+            mtime=os.path.getmtime(ic_version_path),
+            path=ic_version_path,
+            name=ic_version_path.strip(ic_collection)
+    )
+
+def list_ic_versions():
+    
+    ic_versions = []
+
+    for ic_version_path in glob.glob(ic_collection + "/*"):
+        ic_versions.append(ic_version_summary(ic_version_path))
+
+    return ic_versions
+
+    
+
+@cli.command()
+def list():
+    for ic_version in sorted(list_ic_versions(), key=lambda x:x['mtime']):
+        logger.info("ic_version: %s", ic_version)
+
+
+@cli.command()
+@click.argument('ic')
+def inspect(ic):
+    icm = fits.open(Path(ic_collection) / Path(ic) / "idx/ic/ic_master_file.fits")
+
+    print(icm[1].data)
+
+    print(icm[2].data)
+
+    print(icm[3].data)
+
+@cli.command()
+@click.argument('ic_path')
+@click.argument('ext_name')
+def ic_find(ic_path, ext_name):
+    ic_find = pilton.heatool('ic_find')
+    print(ic_find)
+
+    ic_find['icConfig'] = ic_path
+    ic_find['extname'] = ic_path
+
+    ic_find.run()
+
+
+@cli.command()
 @click.argument('icfiles', nargs=-1)
 @click.option('-f', '--from-file', multiple=True)
 @click.option('-s', '--suffix')
-@click.option('-c', '--clobber-index', is_flag=True)
+@click.option('-c', '--overwrite-index', is_flag=True)
 @click.option('-v', '--version', default=None)
-@click.option('-a', '--append', is_flag=True, default=False)
-@click.option('-b', '--bare-location', default=None)
-def create(icfiles, from_file, suffix, clobber_index, debug, bare_location, append, version):
+@click.option('-i', '--in-place', is_flag=True, default=False)
+@click.option('-b', '--base-location', default=None)
+def create(icfiles, from_file, suffix, overwrite_index, base_location, in_place, version):
 
-    ic_collection = os.environ.get("IC_COLLECTION", None)
     if ic_collection is None:
+        logger.error("IC_COLLECTION is needed")
         raise RuntimeError("IC_COLLECTION is needed")
 
-    if version:
-        tmp_ic_root = os.path.join(ic_collection, version)
+    if in_place:
+        if version:
+            logger.warning('in-place update: version ignored')
+        tmp_ic_root = base_location
     else:
-        tmp_ic_version = f"dev{time.strftime('%y%m%d.%H%M')}-{os.getpid()}"
-        tmp_ic_root = os.path.join(ic_collection, tmp_ic_version)
+        if version:
+            tmp_ic_root = os.path.join(ic_collection, version)
+        else:
+            tmp_ic_version = f"dev{time.strftime('%y%m%d.%H%M')}-{os.getpid()}"
+            logger.warning('constructing current version name: %s', tmp_ic_version)
+            tmp_ic_root = os.path.join(ic_collection, tmp_ic_version)
+            
+    if base_location is None:
+        base_location = os.path.join(ic_collection, "bare")
 
-    if bare_location is None:
-        logging.info('will use bare location: %s', bare_location)
-        bare_location = os.path.join(ic_collection, "bare")
+    logging.info('will use base location: %s', base_location)
+    logger.warn('output IC root: %s', tmp_ic_root)
 
-    subprocess.check_call(["rsync", "-avu", 
-                           bare_location + "/",
+    if not in_place:
+        subprocess.check_call(["rsync", "-avu", 
+                           base_location + "/",
                            tmp_ic_root+"/",
                            ])
 
@@ -350,7 +415,7 @@ def create(icfiles, from_file, suffix, clobber_index, debug, bare_location, appe
                 try:
                     ictree.add_icfile(icfile.strip())
                 except Exception as e:
-                    logging.error("failed to add %s: %s", icfile.strip(),e)
+                    logging.error("failed to add %s: %s from list file %s", icfile.strip(), e, fn)
 
     for fn in icfiles:
         try:
@@ -361,8 +426,8 @@ def create(icfiles, from_file, suffix, clobber_index, debug, bare_location, appe
     ictree.write()
     ictree.summarize()
 
-    if version is None:
-        logging.info("version auto-generated: moving (will be)")
+    # if version is None:
+    #     logging.info("version auto-generated: moving (will be)")
 
     logging.info("IC tree ready in %s", ictree.icroot)
 
@@ -372,5 +437,29 @@ def create(icfiles, from_file, suffix, clobber_index, debug, bare_location, appe
  #       ictree.attach_ds(icfile)
  #       ictree.attach_to_master(DS)
 
+@cli.command()
+@click.argument('ic_version')
+def test(ic_version):
+    ic_path = Path(ic_collection) / Path(ic_version)
+
+    with tempfile.TemporaryDirectory() as td:
+        os.chdir(td)
+
+        ogc = pilton.heatool('og_create')
+        ogc['idxSwg'] = 'scw.list'
+        
+        with open(ogc['idxSwg'].value, 'w') as f:
+            f.write(f'{integral_site_config.settings.rep_base_prod}/0665/066500220010.001/swg.fits')
+
+        ogc['instrument'] = 'ibis'
+        ogc['ogid'] = 'ic-verification-test-ogid'
+
+        os.system('pwd; ls -lotr')
+
+        ogc.run(env={**os.environ, 'REP_BASE_PROD': os.getcwd()})
+        
+        
+        # isa = pilton.heatool('ibis_science_analysis')
+
 if __name__ == "__main__":
-    main()
+    cli()

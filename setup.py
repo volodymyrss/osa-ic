@@ -4,7 +4,7 @@ setup(name='osa-ic',
       py_modules=['integralicindex','icdeposit'],
       entry_points={
                     "console_scripts": [
-                        "osa-ic = integralicindex:main"
+                        "osa-ic = osaic.integralicindex:cli"
                     ]
                    },
       )
