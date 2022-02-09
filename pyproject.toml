@@ -16,11 +16,11 @@ astropy = "5.0.1"
 pilton = "^1.1.0"
 integral-timesystem = "^1.0"
 integral-site-config = "^0.1.0"
+Sphinx = {version = "^4.4.0", extras = ["docs"]}
+myst-parser = {version = "^0.16.1", extras = ["docs"]}
 
 [tool.poetry.dev-dependencies]
 pytest-click = "^1.0.2"
-Sphinx = "^4.4.0"
-myst-parser = "^0.16.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
