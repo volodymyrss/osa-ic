@@ -178,11 +178,15 @@ class ICTree:
 
         logging.info("files: %s",fns)
 
-        if os.path.exists(self.DS_to_idx_fn(DS)) and recreate:
-            os.remove(self.DS_to_idx_fn(DS))
+        idx_fn = self.DS_to_idx_fn(DS)
+        if os.path.exists(idx_fn):
+            if recreate:
+                os.remove(idx_fn)
+            else:
+                raise RuntimeError(f'index already exists, will not recreate: {idx_fn}')
 
         da=pilton.heatool("txt2idx")
-        da['index']=self.DS_to_idx_fn(DS)
+        da['index']=idx_fn
         da['template']=DS+"-IDX.tpl"
         da['update']=1 if update else 0
         da['element']=fns_list_fn
@@ -418,13 +422,13 @@ def create(icfiles, from_file, suffix, overwrite_index, base_location, in_place,
                 try:
                     ictree.add_icfile(icfile.strip())
                 except Exception as e:
-                    logging.error("failed to add %s: %s from list file %s", icfile.strip(), e, fn)
+                    logging.error("failed (%s) to add %s: %s from list file %s", e, icfile.strip(), fn)
 
-    for fn in icfiles:
+    for icfile in icfiles:
         try:
-            ictree.add_icfile(fn)
+            ictree.add_icfile(icfile)
         except Exception as e:
-            logging.error("failed to add %s", fn)
+            logging.error("failed (%s) to add %s", e, icfile)
 
     ictree.write()
     ictree.summarize()
@@ -478,6 +482,11 @@ def test(ic_version, directory):
         isa = pilton.heatool('ibis_science_analysis')
         isa['startLevel'] = 'COR'
         isa['endLevel'] = 'LCR'
+        isa['IBIS_nbins_spe'] = -4
+        isa['IBIS_nbins_ima'] = -1
+        isa['ILCR_num_e'] = 1
+        isa['ILCR_e_min'] = '20'
+        isa['ILCR_e_max'] = '200'
         isa.run(env={**os.environ, 
                      'COMMONSCRIPT': "1",
                      'COMMONLOGFILE': "+commonlog.txt",
