@@ -1,0 +1,7 @@
+github:
+  build_pull_requests: true
+
+python:
+  install:
+    - method: pip
+      path: .

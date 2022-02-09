@@ -4,6 +4,11 @@ version = "0.1.0"
 description = ""
 authors = ["Volodymyr Savchenko <contact@volodymyrsavchenko.com>"]
 
+packages = [
+    { include = "osaic" }
+]
+
+
 [tool.poetry.dependencies]
 python = "^3.9"
 click = "^8.0.3"
@@ -20,3 +25,4 @@ myst-parser = "^0.16.1"
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
